@@ -80,6 +80,14 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	return getImageFromSource(ctx, imgStr, source, options...)
 }
 
+// GetImageSize parses the user provided image string and provides an image object;
+// note: the source where the image should be referenced from is automatically inferred.
+func GetImageSize(ctx context.Context, imgStr string, options ...Option) (int64, error) {
+	// look for a known source scheme like docker:
+	source, imgStr := ExtractSchemeSource(imgStr, allProviderTags()...)
+	return getImageSizeFromSource(ctx, imgStr, source, options...)
+}
+
 func getImageFromSource(ctx context.Context, imgStr string, source image.Source, options ...Option) (*image.Image, error) {
 	log.Debugf("image: source=%+v location=%+v", source, imgStr)
 
@@ -117,6 +125,44 @@ func getImageFromSource(ctx context.Context, imgStr string, source image.Source,
 		}
 	}
 	return nil, fmt.Errorf("unable to detect input for '%s', errs: %w", imgStr, errors.Join(errs...))
+}
+
+func getImageSizeFromSource(ctx context.Context, imgStr string, source image.Source, options ...Option) (int64, error) {
+	log.Debugf("image: source=%+v location=%+v", source, imgStr)
+
+	// apply ImageProviderConfig config
+	cfg := config{}
+	if err := applyOptions(&cfg, options...); err != nil {
+		return 0, err
+	}
+
+	// select image provider
+	providers := collections.TaggedValueSet[image.Provider]{}.Join(
+		ImageProviders(ImageProviderConfig{
+			UserInput: imgStr,
+			Platform:  cfg.Platform,
+			Registry:  cfg.Registry,
+		})...,
+	)
+	if source != "" {
+		source = strings.ToLower(strings.TrimSpace(source))
+		providers = providers.Select(source)
+		if len(providers) == 0 {
+			return 0, fmt.Errorf("unable to find image providers matching: '%s'", source)
+		}
+	}
+
+	var errs []error
+	for _, provider := range providers.Values() {
+		compressedSize, err := provider.ImageSize(ctx)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		if compressedSize > 0 {
+			return compressedSize, err
+		}
+	}
+	return 0, fmt.Errorf("unable to detect input for '%s', errs: %w", imgStr, errors.Join(errs...))
 }
 
 func SetLogger(logger logger.Logger) {

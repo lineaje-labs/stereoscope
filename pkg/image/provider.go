@@ -9,4 +9,5 @@ import (
 type Provider interface {
 	Name() string
 	Provide(context.Context) (*Image, error)
+	ImageSize(context.Context) (int64, error)
 }

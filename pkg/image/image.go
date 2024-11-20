@@ -245,6 +245,41 @@ func (i *Image) Read() error {
 	return err
 }
 
+// CompressedSize parses information from the underlying image tar and sets only the total compressed size of the image
+func (i *Image) CompressedSize() (int64, error) {
+	var err error
+	i.Metadata, err = readImageMetadata(i.image)
+	if err != nil {
+		return 0, err
+	}
+
+	// override any metadata with what the user has provided manually
+	if err = i.applyOverrideMetadata(); err != nil {
+		return 0, err
+	}
+
+	log.Debugf("image metadata: digest=%+v mediaType=%+v tags=%+v size=%+v",
+		i.Metadata.ID,
+		i.Metadata.MediaType,
+		i.Metadata.Tags,
+		i.Metadata.Size)
+
+	v1Layers, err := i.image.Layers()
+	if err != nil {
+		return 0, err
+	}
+
+	var _totalSize int64
+	for _, v1Layer := range v1Layers {
+		_size, err := v1Layer.Size()
+		if err == nil {
+			_totalSize += _size
+		}
+	}
+	log.Debugf("layer total size: size=%+v", _totalSize)
+	return _totalSize, nil
+}
+
 // squash generates a squash tree for each layer in the image. For instance, layer 2 squash =
 // squash(layer 0, layer 1, layer 2), layer 3 squash = squash(layer 0, layer 1, layer 2, layer 3), and so on.
 func (i *Image) squash(prog *progress.Manual) error {
