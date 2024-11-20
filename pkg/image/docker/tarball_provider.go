@@ -3,7 +3,6 @@ package docker
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -41,8 +40,34 @@ func (p *tarballImageProvider) Name() string {
 
 // Provide an image object that represents the docker image tar at the configured location on disk.
 func (p *tarballImageProvider) Provide(_ context.Context) (*image.Image, error) {
-	startTime := time.Now()
+	out, err := p.createImage()
+	if err != nil {
+		return nil, err
+	}
+	err = out.Read()
+	if err != nil {
+		return nil, err
+	}
+	return out, err
+}
 
+// ImageSize returns the Compressed Image size without pulling the image
+func (p *tarballImageProvider) ImageSize(_ context.Context) (int64, error) {
+	out, err := p.createImage()
+	if err != nil {
+		return 0, err
+	}
+	defer out.Cleanup()
+	var totalCompressedSize int64
+	totalCompressedSize, err = out.CompressedSize()
+	if err != nil {
+		return 0, err
+	}
+	return totalCompressedSize, err
+}
+
+func (p *tarballImageProvider) createImage() (*image.Image, error) {
+	startTime := time.Now()
 	img, err := tarball.ImageFromPath(p.path, nil)
 	if err != nil {
 		// raise a more controlled error for when there are multiple images within the given tar (from https://github.com/anchore/grype/issues/215)
@@ -98,10 +123,5 @@ func (p *tarballImageProvider) Provide(_ context.Context) (*image.Image, error) 
 	}
 
 	out := image.New(img, p.tmpDirGen, contentTempDir, metadata...)
-	err = out.Read()
-	if err != nil {
-		cleanErr := out.Cleanup()
-		return nil, errors.Join(err, cleanErr)
-	}
-	return out, err
+	return out, nil
 }
