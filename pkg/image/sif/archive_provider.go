@@ -33,6 +33,32 @@ func (p *singularityImageProvider) Name() string {
 
 // Provide returns an Image that represents a Singularity Image Format (SIF) image.
 func (p *singularityImageProvider) Provide(ctx context.Context) (*image.Image, error) {
+	out, err := p.createImage()
+	if err != nil {
+		return nil, err
+	}
+	if err = out.Read(ctx); err != nil {
+		cleanErr := out.Cleanup()
+		return nil, errors.Join(err, cleanErr)
+	}
+	return out, nil
+}
+
+// ImageSize returns the Compressed Image size without pulling the image.
+func (p *singularityImageProvider) ImageSize(_ context.Context) (int64, error) {
+	out, err := p.createImage()
+	if err != nil {
+		return 0, err
+	}
+	defer out.Cleanup()
+	size, err := out.CompressedSize()
+	if err != nil {
+		return 0, err
+	}
+	return size, nil
+}
+
+func (p *singularityImageProvider) createImage() (*image.Image, error) {
 	// We need to map the SIF to a GGCR v1.Image. Start with an implementation of the GGCR
 	// partial.UncompressedImageCore interface.
 	si, err := newSIFImage(p.path)
@@ -58,11 +84,5 @@ func (p *singularityImageProvider) Provide(ctx context.Context) (*image.Image, e
 		image.WithArchitecture(si.arch, ""),
 	}
 
-	out := image.New(ui, p.tmpDirGen, contentCacheDir, metadata...)
-	err = out.Read(ctx)
-	if err != nil {
-		cleanErr := out.Cleanup()
-		return nil, errors.Join(err, cleanErr)
-	}
-	return out, err
+	return image.New(ui, p.tmpDirGen, contentCacheDir, metadata...), nil
 }

@@ -65,6 +65,53 @@ func (p *containersStorageProvider) Provide(ctx context.Context) (*image.Image, 
 	return p.provideFromStore(ctx, store)
 }
 
+// ImageSize returns the compressed image size by copying the image to a temporary docker archive and
+// delegating to the docker archive provider, the same way Provide does.
+func (p *containersStorageProvider) ImageSize(ctx context.Context) (int64, error) {
+	store, err := openDefaultStore()
+	if err != nil {
+		return 0, err
+	}
+	return p.imageSizeFromStore(ctx, store)
+}
+
+func (p *containersStorageProvider) imageSizeFromStore(ctx context.Context, store storage.Store) (int64, error) {
+	srcRef, err := storagetransport.Transport.ParseStoreReference(store, p.imageStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid containers-storage reference %q: %w", p.imageStr, err)
+	}
+
+	tempDir, err := p.tmpDirGen.NewDirectory("containers-storage-image-size")
+	if err != nil {
+		return 0, err
+	}
+
+	archivePath := filepath.Join(tempDir, "image.tar")
+	destRef, err := dockerarchive.ParseReference(archivePath)
+	if err != nil {
+		return 0, fmt.Errorf("invalid docker-archive destination %q: %w", archivePath, err)
+	}
+
+	policyContext, err := newInsecurePolicyContext()
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		if closeErr := policyContext.Destroy(); closeErr != nil {
+			log.Debugf("failed to destroy containers-storage policy context: %v", closeErr)
+		}
+	}()
+
+	sysCtx := p.systemContext(tempDir)
+	if _, err := copy.Image(ctx, policyContext, destRef, srcRef, &copy.Options{
+		SourceCtx: sysCtx,
+	}); err != nil {
+		return 0, fmt.Errorf("failed to copy image from containers-storage: %w", err)
+	}
+
+	return docker.NewArchiveProvider(p.tmpDirGen, archivePath).ImageSize(ctx)
+}
+
 // provideFromStore performs the actual resolution against the given containers-storage store: it copies the image to a
 // temporary docker-archive and reuses the docker archive provider to construct the final stereoscope image. It is
 // separated from Provide so that store construction can be controlled directly in tests.

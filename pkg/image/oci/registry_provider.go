@@ -96,6 +96,33 @@ func (p *registryImageProvider) Name() string {
 
 // Provide an image object that represents the cached docker image tar fetched a registry.
 func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, error) {
+	out, err := p.createImage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err = out.Read(ctx); err != nil {
+		cleanErr := out.Cleanup()
+		return nil, errors.Join(err, cleanErr)
+	}
+	return out, nil
+}
+
+// ImageSize returns the Compressed Image size without pulling the image
+func (p *registryImageProvider) ImageSize(ctx context.Context) (int64, error) {
+	out, err := p.createImage(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer out.Cleanup()
+	var totalCompressedSize int64
+	totalCompressedSize, err = out.CompressedSize()
+	if err != nil {
+		return 0, err
+	}
+	return totalCompressedSize, err
+}
+
+func (p *registryImageProvider) createImage(ctx context.Context) (*image.Image, error) {
 	log.Debugf("pulling image info directly from registry image=%q", p.imageStr)
 
 	startTime := time.Now()
@@ -172,13 +199,7 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 		ctx = async.SetContextExecutor(ctx, image.LayerFetchExecutor, async.NewExecutor(1))
 	}
 
-	out := image.New(img, p.tmpDirGen, imageTempDir, metadata...)
-	err = out.Read(ctx)
-	if err != nil {
-		cleanErr := out.Cleanup()
-		return nil, errors.Join(err, cleanErr)
-	}
-	return out, err
+	return image.New(img, p.tmpDirGen, imageTempDir, metadata...), nil
 }
 
 func (p *registryImageProvider) finalizePlatform(descriptor *remote.Descriptor, platform **image.Platform) {

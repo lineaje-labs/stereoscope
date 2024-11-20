@@ -34,3 +34,7 @@ func (p *unsupportedProvider) Name() string {
 func (p *unsupportedProvider) Provide(_ context.Context) (*image.Image, error) {
 	return nil, errNotCompiledIn
 }
+
+func (p *unsupportedProvider) ImageSize(_ context.Context) (int64, error) {
+	return 0, errNotCompiledIn
+}
