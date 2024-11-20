@@ -99,6 +99,36 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 		Provide(ctx)
 }
 
+// ImageSize returns the Compressed Image size without pulling the image
+func (p *daemonImageProvider) ImageSize(ctx context.Context) (int64, error) {
+	client, err := containerdClient.GetClient()
+	if err != nil {
+		return 0, fmt.Errorf("containerd not available: %w", err)
+	}
+
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Errorf("unable to close containerd client: %+v", err)
+		}
+	}()
+
+	ctx = namespaces.WithNamespace(ctx, p.namespace)
+
+	resolvedImage, resolvedPlatform, err := p.pullImageIfMissing(ctx, client)
+	if err != nil {
+		return 0, err
+	}
+
+	tarFileName, err := p.saveImage(ctx, client, resolvedImage)
+	if err != nil {
+		return 0, err
+	}
+
+	// use the existing tarball provider to process what was pulled from the containerd daemon
+	return stereoscopeDocker.NewArchiveProvider(p.tmpDirGen, tarFileName, withMetadata(resolvedPlatform, p.imageStr)...).
+		ImageSize(ctx)
+}
+
 // pull a containerd image
 func (p *daemonImageProvider) pull(ctx context.Context, client *containerd.Client, resolvedImage string) (containerd.Image, error) {
 	var platformStr string

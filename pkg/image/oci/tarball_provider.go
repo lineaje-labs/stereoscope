@@ -49,3 +49,24 @@ func (p *tarballImageProvider) Provide(ctx context.Context) (*image.Image, error
 
 	return NewDirectoryProvider(p.tmpDirGen, tempDir).Provide(ctx)
 }
+
+// ImageSize returns the Compressed Image size without pulling the image
+func (p *tarballImageProvider) ImageSize(ctx context.Context) (int64, error) {
+	// note: we are untaring the image and using the existing directory provider, we could probably enhance the google
+	// container registry lib to do this without needing to untar to a temp dir (https://github.com/google/go-containerregistry/issues/726)
+	f, err := os.Open(p.path)
+	if err != nil {
+		return 0, fmt.Errorf("unable to open OCI tarball: %w", err)
+	}
+
+	tempDir, err := p.tmpDirGen.NewDirectory("oci-tarball-image")
+	if err != nil {
+		return 0, err
+	}
+
+	if err = file.UntarToDirectory(f, tempDir); err != nil {
+		return 0, err
+	}
+
+	return NewDirectoryProvider(p.tmpDirGen, tempDir).ImageSize(ctx)
+}

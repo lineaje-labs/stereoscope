@@ -33,6 +33,33 @@ func (p *directoryImageProvider) Name() string {
 
 // Provide an image object that represents the OCI image as a directory.
 func (p *directoryImageProvider) Provide(_ context.Context) (*image.Image, error) {
+	out, err := p.createImage()
+	if err != nil {
+		return nil, err
+	}
+	err = out.Read()
+	if err != nil {
+		return nil, err
+	}
+	return out, err
+}
+
+// ImageSize returns the Compressed Image size without pulling the image
+func (p *directoryImageProvider) ImageSize(_ context.Context) (int64, error) {
+	out, err := p.createImage()
+	if err != nil {
+		return 0, err
+	}
+	defer out.Cleanup()
+	var totalCompressedSize int64
+	totalCompressedSize, err = out.CompressedSize()
+	if err != nil {
+		return 0, err
+	}
+	return totalCompressedSize, err
+}
+
+func (p *directoryImageProvider) createImage() (*image.Image, error) {
 	pathObj, err := layout.FromPath(p.path)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read image from OCI directory path %q: %w", p.path, err)
@@ -81,10 +108,6 @@ func (p *directoryImageProvider) Provide(_ context.Context) (*image.Image, error
 	}
 
 	out := image.New(img, p.tmpDirGen, contentTempDir, metadata...)
-	err = out.Read()
-	if err != nil {
-		return nil, err
-	}
 	return out, err
 }
 

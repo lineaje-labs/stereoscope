@@ -282,6 +282,41 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 		Provide(ctx)
 }
 
+// ImageSize returns the Compressed Image size without pulling the image
+func (p *daemonImageProvider) ImageSize(ctx context.Context) (int64, error) {
+	apiClient, err := p.newAPIClient()
+	if err != nil {
+		return 0, fmt.Errorf("%s not available: %w", p.name, err)
+	}
+
+	defer func() {
+		if err := apiClient.Close(); err != nil {
+			log.Errorf("unable to close %s client: %+v", p.name, err)
+		}
+	}()
+
+	c2, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	pong, err := apiClient.Ping(c2)
+	if err != nil || pong.APIVersion == "" {
+		return 0, fmt.Errorf("unable to get %s API response: %w", p.name, err)
+	}
+
+	imageRef, err := p.pullImageIfMissing(ctx, apiClient)
+	if err != nil {
+		return 0, err
+	}
+
+	// inspect the image that might have been pulled
+	inspectResult, _, err := apiClient.ImageInspectWithRaw(ctx, imageRef)
+	if err != nil {
+		return 0, fmt.Errorf("unable to inspect existing image: %w", err)
+	}
+
+	return inspectResult.Size, err
+}
+
 func (p *daemonImageProvider) saveImage(ctx context.Context, apiClient client.APIClient, imageRef string) (string, error) {
 	// save the image from the docker daemon to a tar file
 	providerProgress, err := p.trackSaveProgress(ctx, apiClient, imageRef)

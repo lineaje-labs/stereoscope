@@ -43,6 +43,33 @@ func (p *registryImageProvider) Name() string {
 
 // Provide an image object that represents the cached docker image tar fetched a registry.
 func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, error) {
+	out, err := p.createImage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = out.Read()
+	if err != nil {
+		return nil, err
+	}
+	return out, err
+}
+
+// ImageSize returns the Compressed Image size without pulling the image
+func (p *registryImageProvider) ImageSize(ctx context.Context) (int64, error) {
+	out, err := p.createImage(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer out.Cleanup()
+	var totalCompressedSize int64
+	totalCompressedSize, err = out.CompressedSize()
+	if err != nil {
+		return 0, err
+	}
+	return totalCompressedSize, err
+}
+
+func (p *registryImageProvider) createImage(ctx context.Context) (*image.Image, error) {
 	log.Debugf("pulling image info directly from registry image=%q", p.imageStr)
 
 	imageTempDir, err := p.tmpDirGen.NewDirectory("oci-registry-image")
@@ -90,10 +117,6 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 	}
 
 	out := image.New(img, p.tmpDirGen, imageTempDir, metadata...)
-	err = out.Read()
-	if err != nil {
-		return nil, err
-	}
 	return out, err
 }
 
