@@ -118,13 +118,15 @@ func TestValidatePlatform(t *testing.T) {
 			expectedErrMsg: `image platform="linux/arm64/v7" does not match user specified platform="linux/arm64/v8"`,
 		},
 		{
-			name:           "user specifies variant, image does not have one",
-			platform:       &image.Platform{OS: "linux", Architecture: "arm64", Variant: "v8"},
-			givenOs:        "linux",
-			givenArch:      "arm64",
-			givenVariant:   "",
-			expectedErr:    isFetchError,
-			expectedErrMsg: `image platform="linux/arm64" does not match user specified platform="linux/arm64/v8"`,
+			// An image with no variant in its config (e.g. built by Nix buildLayeredImage) is
+			// compatible with any variant request for that architecture. Only reject when both
+			// sides specify a variant and they differ.
+			name:         "user specifies variant, image does not have one — compatible",
+			platform:     &image.Platform{OS: "linux", Architecture: "arm64", Variant: "v8"},
+			givenOs:      "linux",
+			givenArch:    "arm64",
+			givenVariant: "",
+			expectedErr:  require.NoError,
 		},
 		{
 			name:         "image has variant, user does not specify one",
@@ -133,6 +135,28 @@ func TestValidatePlatform(t *testing.T) {
 			givenArch:    "arm64",
 			givenVariant: "v8",
 			expectedErr:  require.NoError,
+		},
+		{
+			// The primary case this fix addresses: Nix's buildLayeredImage sets architecture:"arm"
+			// with no variant. The user (or veecli's platform probe) requests linux/arm which
+			// normalizeArch promotes to linux/arm/v7. The image config has no variant — it should
+			// match, not fail with "mismatched platform (expected linux/arm/v7)".
+			name:         "arm image with no variant matches arm/v7 request (Nix buildLayeredImage case)",
+			platform:     &image.Platform{OS: "linux", Architecture: "arm", Variant: "v7"},
+			givenOs:      "linux",
+			givenArch:    "arm",
+			givenVariant: "",
+			expectedErr:  require.NoError,
+		},
+		{
+			// Two images that both declare explicit but different variants are genuinely incompatible.
+			name:           "arm/v6 image does not match arm/v7 request",
+			platform:       &image.Platform{OS: "linux", Architecture: "arm", Variant: "v7"},
+			givenOs:        "linux",
+			givenArch:      "arm",
+			givenVariant:   "v6",
+			expectedErr:    isFetchError,
+			expectedErrMsg: `image platform="linux/arm/v6" does not match user specified platform="linux/arm/v7"`,
 		},
 	}
 
