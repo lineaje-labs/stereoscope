@@ -83,7 +83,20 @@ func matchesPlatform(given, required containerregistryV1.Platform) bool {
 	if required.OSVersion != "" && given.OSVersion != required.OSVersion {
 		return false
 	}
-	if required.Variant != "" && given.Variant != required.Variant {
+
+	// Variant matching is intentionally lenient: only reject when BOTH sides specify a variant
+	// and they differ. If the image has no variant set (given.Variant == ""), it means the image
+	// was built without declaring a specific CPU sub-architecture (e.g. Nix's buildLayeredImage
+	// sets architecture: "arm" with no variant in the image config). Such an image should be
+	// treated as compatible with any variant of that architecture.
+	//
+	// Without this leniency, requesting "linux/arm" normalizes to "linux/arm/v7" (see
+	// normalizeArch), and the strict check would then reject an image whose config says
+	// "arm" with no variant — producing "mismatched platform (expected linux/arm/v7): image
+	// platform=linux/arm does not match user specified platform=linux/arm/v7".
+	//
+	// This matches the upstream go-containerregistry behavior (remote/index.go matchesPlatform).
+	if required.Variant != "" && given.Variant != "" && given.Variant != required.Variant {
 		return false
 	}
 
